@@ -14,39 +14,56 @@ from typing import List, Dict, Optional, Tuple
 
 # ---------- Defaults matching your setup ----------
 DEFAULT_BASE_DIR = "/home/william/CAG Dropbox/Media/Sermon Recordigs"
-DEFAULT_SEND_MAIL = "/home/william/scripts/PERSONAL/sunday-wisdom"
+DEFAULT_SEND_MAIL = "/home/william/scripts/PERSONAL/sunday-wisdom/gather_wisdom"
 DEFAULT_TMP = f"{DEFAULT_SEND_MAIL}/tmp"
 DEFAULT_FFMPEG = "/usr/bin/ffmpeg"
 
-# ---------- Regexes ----------
-TIME_RE = re.compile(r"(?:(\d+):)?([0-5]?\d):([0-5]?\d)$")  # hh:mm:ss or mm:ss
+# Accepts mm:ss or hh:mm:ss (e.g., 22:12 or 1:02:03)
+TIME_RE = re.compile(r'^(?:(\d+):)?([0-5]?\d):([0-5]?\d)$')
+
+# Header section: “# VIDEO CLIP SUGGESTIONS” with optional colon
 SUGGESTION_SECTION_RE = re.compile(
-    r"^\s*#\s*VIDEO CLIP SUGGESTIONS:\s*(.+)$",
-    re.IGNORECASE | re.MULTILINE | re.DOTALL
+    r"""
+    ^\s*\#\s*VIDEO\W*CLIP\W*SUGGESTIONS\s*:?\s*$   # header line, colon optional
+    (.*?)                                          # capture section body (non-greedy)
+    (?=^\s*\#\s|\Z)                                # until next header or EOF
+    """,
+    flags=re.IGNORECASE | re.MULTILINE | re.DOTALL | re.VERBOSE
 )
+
+# Each numbered suggestion block (Seconds line optional; Start/End required)
 BLOCK_RE = re.compile(
     r"""
-    ^\s*\d+\.\s*\*\*.*?\*\*.*?$                 # "1. **(45 Seconds)**"
-    .*?^\s*\*\*Start:\*\*\s*(.+?)\s*$           # Start: 13:06
-    .*?^\s*\*\*End:\*\*\s*(.+?)\s*$             # End:   13:51
-    (?:.*?^\s*\*\*First Sentence:\*\*\s*"(.*?)"\s*$)?  # optional
-    (?:.*?^\s*\*\*Last Sentence:\*\*\s*"(.*?)"\s*$)?   # optional
+    ^\s*\d+\.\s*(?:\*\*.*?\*\*)?.*$                 # "1. **(45 Seconds)**"  (optional)
+    .*?^\s*\*\*Start:\*\*\s*([0-9:\s]+?)\s*$        # Start: 13:06
+    .*?^\s*\*\*End:\*\*\s*([0-9:\s]+?)\s*$          # End:   13:51
+    (?:.*?^\s*\*\*First\s+Sentence:\*\*\s*"(.*?)"\s*$)?  # optional
+    (?:.*?^\s*\*\*Last\s+Sentence:\*\*\s*"(.*?)"\s*$)?   # optional
     """,
-    re.MULTILINE | re.DOTALL | re.VERBOSE,
+    flags=re.MULTILINE | re.DOTALL | re.VERBOSE
 )
 
 # ---------- Helpers ----------
 def parse_ts(ts: str) -> float:
-    ts = ts.strip()
+    """
+    Parse time strings like '22:12' or '1:02:03' into seconds.
+    Also tolerates stray quotes/spaces and leading/trailing text.
+    """
+    ts = str(ts).strip().strip('"').strip("'")
+    # Sometimes the value comes with extra spacing or punctuation; keep only digits and colons.
+    ts = re.sub(r'[^0-9:]', '', ts)
+
     m = TIME_RE.match(ts)
-    if m:
-        h = int(m.group(1) or 0)
-        mi = int(m.group(2))
-        s = int(m.group(3))
-        return h * 3600 + mi * 60 + s
-    if ts.isdigit():
-        return float(ts)
-    raise ValueError(f"Unrecognized time format: {ts!r}")
+    if not m:
+        # As a fallback, try to interpret a raw number as seconds
+        if ts.isdigit():
+            return float(ts)
+        raise ValueError(f"Unrecognized time format: {ts!r}")
+
+    h = int(m.group(1) or 0)
+    mi = int(m.group(2))
+    s = int(m.group(3))
+    return h * 3600 + mi * 60 + s
 
 def slug(s: str, max_len: int = 60) -> str:
     s = s.strip().lower()
@@ -208,10 +225,10 @@ def main():
     ap.add_argument("--preset", default="veryfast", help="x264 preset (default veryfast)")
     ap.add_argument("--dry-run", action="store_true", help="Print commands only")
 
-    # Smart vertical reframing (speaker-centered)
-    ap.add_argument("--vertical-smart", action="store_true",
-                    help="Run smart_reframe_vertical.py on each clip to produce 9:16 speaker-centered output.")
-    ap.add_argument("--smart-script", default="smart_reframe_vertical.py",
+# Smart vertical reframing (speaker-centered)
+    ap.add_argument("--vertical-smart", action="store_true", dest="vertical_smart",
+                help="Run smart_reframe_vertical.py on each clip to produce 9:16 speaker-centered output.")
+    ap.add_argument("--smart-script", default="/home/william/scripts/PERSONAL/sunday-wisdom/shorts_maker/smart_reframe_vertical.py",
                     help="Path to smart_reframe_vertical.py")
     ap.add_argument("--smart-stride", type=int, default=5,
                     help="Detect every Nth frame for smart reframing (default 5). Lower = more accurate.")
@@ -283,8 +300,9 @@ def main():
     outdir.mkdir(parents=True, exist_ok=True)
     print(f"📁 Output dir: {outdir}")
     print(f"⚙️ Cut mode: {'fast-copy (keyframe aligned)' if args.fast_copy else 're-encode (accurate)'}")
-    if args.vertical-smart:
+    if args.vertical_smart:
         print("🤖 Smart vertical reframing: ENABLED")
+
 
     # Process all suggestions
     for i, c in enumerate(clips, start=1):
