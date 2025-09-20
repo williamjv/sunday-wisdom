@@ -6,7 +6,7 @@ set -e
 # Configuration
 # =====================
 BASE_DIR="/home/william/CAG Dropbox/Media/Sermon Recordigs"
-SEND_MAIL="/home/william/scripts/PERSONAL/sunday-wisdom"
+SEND_MAIL="/home/william/scripts/PERSONAL/sunday-wisdom/gather_wisdom"
 VENV_ACTIVATE="/home/william/scripts/PERSONAL/fabric/.venv/bin/activate"
 
 # Binary paths (fully qualified)
@@ -17,6 +17,10 @@ DROPBOX_BIN="/usr/bin/dropbox"
 PYTHON_BIN="/home/william/scripts/PERSONAL/fabric/.venv/bin/python3"
 RCLONE_BIN="/usr/bin/rclone"
 RSYNC_BIN="/usr/bin/rsync"
+
+# Script paths (shorts generation)
+SHORTS_MAKER="/home/william/scripts/PERSONAL/sunday-wisdom/shorts_maker/make_shorts_from_wisdom.py"
+SMART_REFRAME="/home/william/scripts/PERSONAL/sunday-wisdom/shorts_maker/smart_reframe_vertical.py"
 
 # =====================
 # Logging Setup
@@ -57,14 +61,16 @@ debug() {
 # Log Environment Info
 # =====================
 debug "🔧 Environment paths:"
-debug "• ffmpeg:    $FFMPEG_BIN"
-debug "• whisper:   $WHISPER_BIN"
-debug "• fabric:    $FABRIC_BIN"
-debug "• dropbox:   $DROPBOX_BIN"
-debug "• python3:   $PYTHON_BIN"
-debug "• rclone:    $RCLONE_BIN"
-debug "• rsync:     $RSYNC_BIN"
-debug "• VIRTUAL_ENV: $VIRTUAL_ENV"
+debug "• ffmpeg:       $FFMPEG_BIN"
+debug "• whisper:      $WHISPER_BIN"
+debug "• fabric:       $FABRIC_BIN"
+debug "• dropbox:      $DROPBOX_BIN"
+debug "• python3:      $PYTHON_BIN"
+debug "• rclone:       $RCLONE_BIN"
+debug "• rsync:        $RSYNC_BIN"
+debug "• shorts maker: $SHORTS_MAKER"
+debug "• smart refram: $SMART_REFRAME"
+debug "• VIRTUAL_ENV:  $VIRTUAL_ENV"
 
 # =====================
 # Functions
@@ -77,14 +83,14 @@ ensure_virtualenv_ready() {
         debug "✅ Virtual environment is active."
     fi
 
-    if ! command -v "$FABRIC_BIN" &>/dev/null; then
+    if [[ ! -x "$FABRIC_BIN" ]]; then
         log "❌ 'fabric' command not found at $FABRIC_BIN. Is it installed?"
         exit 1
     fi
 }
 
 # =====================
-# Start Processing
+# Start Processingf
 # =====================
 cd "$BASE_DIR" || { log "❌ Directory not found: $BASE_DIR"; exit 1; }
 
@@ -98,8 +104,6 @@ else
 fi
 
 log "⏳ Waiting for Dropbox to be 'Up to date'..."
-
-spinner="/-\|"
 
 while true; do
     status_output=$("$DROPBOX_BIN" status)
@@ -119,7 +123,7 @@ done
 # =====================
 # Process Files
 # =====================
-latest_sunday=$(date -d "last sunday" +%Y-%m-%d)
+latest_sunday=$(date -d "next sunday - 1 week" +%Y-%m-%d)
 log "🔍 Looking for MP4 files from $latest_sunday..."
 
 mapfile -t sunday_files < <(find . -maxdepth 1 -name "${latest_sunday}*.mp4" | sort)
@@ -142,9 +146,9 @@ for video in "${sunday_files[@]}"; do
 
     # Delete videos outside the 9 AM – 1 PM window
     if (( total_minutes < 540 || total_minutes > 780 )); then
-    echo "🗑 Deleting $filename (outside of 9am–1pm window)"
-    /usr/bin/gio trash "$video"
-    continue
+        log "🗑 Deleting $filename (outside of 9am–1pm window)"
+        /usr/bin/gio trash "$video"
+        continue
     fi
 
     if (( total_minutes < 660 )); then
@@ -172,17 +176,71 @@ for video in "${sunday_files[@]}"; do
     "$WHISPER_BIN" "$audio_file" --model medium --language en --output_format txt > "$transcript_file"
 
     log "💡 Extracting wisdom from $transcript_file..."
-    cat "$transcript_file" | "$FABRIC_BIN" --pattern extract_wisdom_sermon > "$wisdom_output"
+    cat "$transcript_file" | "$FABRIC_BIN" --pattern extract_wisdom_sermon_simple > "$wisdom_output"
 
     log "🧹 Cleaning up intermediate files..."
     log "🗑 Deleting MP3: ${audio_file}" && rm "${audio_file}"
     log "🗑 Deleting Transcript: ${transcript_file}" && rm "${transcript_file}"
 done
 
+# =====================
+# Generate Shorts from Wisdom
+# =====================
+# log "🎬 Generating YouTube Shorts from wisdom suggestions..."
+# cd "$SEND_MAIL"
+
+# SHORTS_DIR="${SEND_MAIL}/shorts"
+# mkdir -p "$SHORTS_DIR"
+
+# if [[ ! -f "$SHORTS_MAKER" ]]; then
+#   log "⚠️ Shorts maker script not found at $SHORTS_MAKER — skipping shorts generation."
+# elif [[ ! -f "$SMART_REFRAME" ]]; then
+#   log "⚠️ Smart reframer script not found at $SMART_REFRAME — skipping shorts generation."
+# else
+#   # Common args for shorts maker
+#   SMART_ARGS=( --vertical-smart --ffmpeg "$FFMPEG_BIN" --outdir "$SHORTS_DIR" --base-dir "$BASE_DIR" --sunday "$latest_sunday" )
+#   # If the top-level script was run with --debug, pass through smart debug flags
+#   if [[ "$DEBUG" -eq 1 ]]; then
+#     SMART_ARGS+=( --smart-debug-overlay --smart-debug-sbs --smart-export-csv )
+#   fi
+
+#   # 1st service
+#   if [[ -f "${SEND_MAIL}/tmp/1st_service_wisdom.txt" ]]; then
+#     log "▶️ Creating clips for 1st service..."
+#     "$PYTHON_BIN" "$SHORTS_MAKER" \
+#       --service 1st \
+#       --wisdom-file "${SEND_MAIL}/tmp/1st_service_wisdom.txt" \
+#       "${SMART_ARGS[@]}" \
+#       || log "⚠️ Shorts generation for 1st service returned non-zero status."
+#   else
+#     debug "ℹ️ No 1st_service_wisdom.txt found — skipping 1st service shorts."
+#   fi
+
+#   # 2nd service
+#   if [[ -f "${SEND_MAIL}/tmp/2nd_service_wisdom.txt" ]]; then
+#     log "▶️ Creating clips for 2nd service..."
+#     "$PYTHON_BIN" "$SHORTS_MAKER" \
+#       --service 2nd \
+#       --wisdom-file "${SEND_MAIL}/tmp/2nd_service_wisdom.txt" \
+#       "${SMART_ARGS[@]}" \
+#       || log "⚠️ Shorts generation for 2nd service returned non-zero status."
+#   else
+#     debug "ℹ️ No 2nd_service_wisdom.txt found — skipping 2nd service shorts."
+#   fi
+# fi
+
+# log "✅ Shorts generation complete."
+
+# =====================
+# Email Results
+# =====================
 log "📧 Calling Email Script..."
 cd "$SEND_MAIL"
-"$PYTHON_BIN" send-mail.py
+"$PYTHON_BIN" /home/william/scripts/PERSONAL/sunday-wisdom/gather_wisdom/send-mail.py
 
+# =====================
+# Mount & Archive to Google Drive
+# =====================
 if ! mount | grep -q "/home/william/GoogleDrive"; then
     log "🔗 Mounting Google Drive..."
     "$RCLONE_BIN" mount "Google Drive:" /home/william/GoogleDrive --daemon
@@ -192,19 +250,12 @@ else
 fi
 
 log "📦 Archiving recordings older than 30 days..."
-
 find "$BASE_DIR" -type f -mtime +30 -print0 | while IFS= read -r -d '' file; do
   filename=$(basename "$file")
-  
-  # Extract year from filename (assumes YYYY-MM-DD at the start)
   if [[ "$filename" =~ ^([0-9]{4})- ]]; then
     year="${BASH_REMATCH[1]}"
     target_dir="/home/william/GoogleDrive/Sermons/$year"
-    
-    # Create target directory if it doesn't exist
     mkdir -p "$target_dir"
-    
-    # Rsync and remove source file
     log "📂 Archiving '$filename' to $target_dir"
     "$RSYNC_BIN" -av --remove-source-files "$file" "$target_dir/"
   else
@@ -212,11 +263,17 @@ find "$BASE_DIR" -type f -mtime +30 -print0 | while IFS= read -r -d '' file; do
   fi
 done
 
+# =====================
+# Log rotation cleanup
+# =====================
 log "🧹 Cleaning up logs older than 30 days..."
 find "$LOG_DIR" -type f -name "sermon_pipeline_*.log" -mtime +30 -exec rm {} \;
 log "🧼 Log cleanup complete."
 
+# =====================
+# YouTube Archive
+# =====================
 log "▶️ Running Archive YouTube Live Videos..."
-"$PYTHON_BIN" archive-youtube-live-videos.py --min-days 14
+"$PYTHON_BIN" /home/william/scripts/PERSONAL/sunday-wisdom/gather_wisdom/archive-youtube-live-videos.py --min-days 14
 
 log "✅ All done!"
