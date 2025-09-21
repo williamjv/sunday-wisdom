@@ -57,7 +57,7 @@ def main():
         with open(args.transcript_out, "r") as transcript, open(args.wisdom_out, "w") as wisdom:
             result = subprocess.run([
                 FABRIC_BIN, "--pattern", PROMPT_PATH
-            ], stdin=transcript, stdout=wisdom, capture_output=True, text=True)
+            ], stdin=transcript, stdout=wisdom, stderr=subprocess.PIPE, text=True)
             if result.returncode != 0:
                 logging.error(f"Fabric failed: {result.stderr}")
                 print(f"Fabric failed: {result.stderr}")

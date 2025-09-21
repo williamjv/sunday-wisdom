@@ -208,7 +208,12 @@ def make_clip(
 # ---------- Main ----------
 def main():
     ap = argparse.ArgumentParser(
-        description="Create clips from Fabric’s 'VIDEO CLIP SUGGESTIONS' using the right Sunday MP4 automatically."
+        description="Create clips from Fabric’s 'VIDEO CLIP SUGGESTIONS' using the right Sunday MP4 automatically or a specified video file."
+    )
+    ap.add_argument(
+        "--video",
+        default=None,
+        help="Explicit path to the input video file (any name/extension). Overrides auto-detection."
     )
     # Which inputs
     ap.add_argument("--service", choices=["1st", "2nd"], required=False,
@@ -288,19 +293,25 @@ def main():
     print(f"📝 Using wisdom file: {wisdom_file}")
     print(f"🕍 Service: {service or 'auto'}")
 
-    # Find MP4 based on Sunday+service
+
+    # Support explicit video file (arbitrary name/extension)
     input_mp4: Optional[Path] = None
-    if service:
-        input_mp4 = pick_video_for_service(base_dir, sunday, service)
+    if args.video:
+        input_mp4 = Path(args.video)
+        if not input_mp4.exists():
+            print(f"❌ Specified video file not found: {input_mp4}")
+            sys.exit(3)
+        print(f"🎬 Using explicit video file: {input_mp4}")
     else:
-        input_mp4 = pick_video_for_service(base_dir, sunday, "1st") or \
-                    pick_video_for_service(base_dir, sunday, "2nd")
-
-    if not input_mp4 or not input_mp4.exists():
-        print("❌ Could not find a matching MP4 for that Sunday/service in the base directory.")
-        sys.exit(3)
-
-    print(f"🎬 Input MP4: {input_mp4}")
+        if service:
+            input_mp4 = pick_video_for_service(base_dir, sunday, service)
+        else:
+            input_mp4 = pick_video_for_service(base_dir, sunday, "1st") or \
+                        pick_video_for_service(base_dir, sunday, "2nd")
+        if not input_mp4 or not input_mp4.exists():
+            print("❌ Could not find a matching MP4 for that Sunday/service in the base directory.")
+            sys.exit(3)
+        print(f"🎬 Input MP4: {input_mp4}")
 
     # Parse suggestions
     wisdom_text = wisdom_file.read_text(encoding="utf-8", errors="ignore")
