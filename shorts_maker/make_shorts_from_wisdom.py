@@ -114,7 +114,12 @@ def pick_video_for_service(base_dir: Path, sunday_str: str, service: str) -> Opt
     - 2nd service: >= 11:15
     Choose first match in sorted order.
     """
-    candidates = sorted(base_dir.glob(f"{sunday_str}*.mp4"))
+
+    # Support multiple video file extensions
+    exts = [".mp4", ".mkv", ".mov", ".webm"]
+    candidates = []
+    for ext in exts:
+        candidates.extend(sorted(base_dir.glob(f"{sunday_str}*{ext}")))
     if not candidates:
         return None
 
@@ -241,6 +246,14 @@ def main():
     ap.add_argument("--smart-export-csv", action="store_true",
                     help="Export per-frame positions to CSV (<output>.csv).")
 
+
+    ap.add_argument(
+        "--max-clips",
+        type=int,
+        default=None,
+        help="Maximum number of clips to generate (default: unlimited)"
+    )
+
     args = ap.parse_args()
 
     base_dir = Path(args.base_dir)
@@ -291,10 +304,15 @@ def main():
 
     # Parse suggestions
     wisdom_text = wisdom_file.read_text(encoding="utf-8", errors="ignore")
+
     clips = extract_suggestions(wisdom_text)
     if not clips:
         print("❌ No parsable 'VIDEO CLIP SUGGESTIONS' found in the wisdom file.")
         sys.exit(4)
+
+    if args.max_clips is not None:
+        clips = clips[:args.max_clips]
+        print(f"🔢 Limiting to {len(clips)} clips (max-clips={args.max_clips})")
 
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
