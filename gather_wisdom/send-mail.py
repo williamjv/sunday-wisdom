@@ -44,8 +44,8 @@ def get_last_sunday():
 
 def authenticate_gmail():
     creds = None
-    token_file = 'send-mail-token.json'
-    credentials_file = 'send-mail-credentials.json'
+    token_file = '../shared/send-mail-token.json'
+    credentials_file = '../shared/send-mail-credentials.json'
 
     if os.path.exists(token_file):
         creds = Credentials.from_authorized_user_file(token_file, SCOPES)

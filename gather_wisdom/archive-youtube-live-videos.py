@@ -34,7 +34,7 @@ logger.addHandler(logging.StreamHandler())  # Also print to console
 
 def get_authenticated_service():
     creds = None
-    token_file = 'archive-youtube-credentials.pickle'
+    token_file = '../shared/archive-youtube-credentials.pickle'
     try:
         if os.path.exists(token_file):
             with open(token_file, 'rb') as token:
@@ -57,7 +57,7 @@ def get_authenticated_service():
                 return get_authenticated_service()
         else:
             logging.info("⚠️ No valid credentials available. Starting new OAuth flow.")
-            flow = InstalledAppFlow.from_client_secrets_file('archive-youtube-credentials.json', SCOPES)
+            flow = InstalledAppFlow.from_client_secrets_file('../shared/archive-youtube-credentials.json', SCOPES)
             creds = flow.run_local_server(port=0)
 
             with open(token_file, 'wb') as token:
