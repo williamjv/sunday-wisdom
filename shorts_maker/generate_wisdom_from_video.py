@@ -10,6 +10,7 @@ import argparse
 import os
 import subprocess
 import logging
+import sys
 
 
 WHISPER_BIN = "whisper"  # Assumes whisper is in PATH
@@ -35,9 +36,11 @@ def main():
         # 1. Transcribe
         print(f"Transcribing {args.video}...")
         logging.info(f"Transcribing {args.video}...")
-        result = subprocess.run([
-            WHISPER_BIN, args.video, "--output_format", "txt", "--language", "en", "--model", "medium", "--output", args.transcript_out
-        ], capture_output=True, text=True)
+        # Whisper CLI: whisper <audio_file> --model medium --language en --output_format txt > transcript.txt
+        with open(args.transcript_out, "w") as transcript_out:
+            result = subprocess.run([
+                WHISPER_BIN, args.video, "--model", "medium", "--language", "en", "--output_format", "txt"
+            ], stdout=transcript_out, stderr=subprocess.PIPE, text=True)
         if result.returncode != 0:
             logging.error(f"Whisper failed: {result.stderr}")
             print(f"Whisper failed: {result.stderr}")
