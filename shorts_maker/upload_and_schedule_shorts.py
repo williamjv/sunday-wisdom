@@ -11,12 +11,16 @@ import sys
 import argparse
 import datetime
 import logging
+import pickle
 from googleapiclient.discovery import build
-from google.oauth2.service_account import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
 import pytz
 
 
+
 SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
+TOKEN_FILE = os.path.join(os.path.dirname(__file__), "../shared/archive-youtube-credentials.pickle")
 CREDENTIALS_FILE = os.path.join(os.path.dirname(__file__), "../shared/archive-youtube-credentials.json")
 LOG_FILE = os.path.join(os.path.dirname(__file__), "upload_and_schedule_shorts.log")
 
@@ -63,7 +67,31 @@ def main():
     args = parser.parse_args()
 
     try:
-        creds = Credentials.from_service_account_file(CREDENTIALS_FILE, scopes=SCOPES)
+        creds = None
+        if os.path.exists(TOKEN_FILE):
+            with open(TOKEN_FILE, 'rb') as token:
+                creds = pickle.load(token)
+        if creds and creds.valid:
+            logging.info("✅ Using existing valid credentials.")
+        elif creds and creds.expired and creds.refresh_token:
+            logging.info("🔄 Credentials expired, attempting refresh...")
+            try:
+                creds.refresh(Request())
+                with open(TOKEN_FILE, 'wb') as token:
+                    pickle.dump(creds, token)
+                logging.info("✅ Credentials refreshed and saved.")
+            except Exception as e:
+                logging.error(f"❌ Token refresh failed: {e}")
+                if os.path.exists(TOKEN_FILE):
+                    os.remove(TOKEN_FILE)
+                creds = None
+        if not creds or not creds.valid:
+            logging.info("⚠️ No valid credentials available. Starting new OAuth flow.")
+            flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
+            creds = flow.run_local_server(port=0)
+            with open(TOKEN_FILE, 'wb') as token:
+                pickle.dump(creds, token)
+            logging.info("✅ New credentials obtained and saved.")
         youtube = build("youtube", "v3", credentials=creds)
 
         shorts = sorted([f for f in os.listdir(args.shorts_dir) if f.endswith(".mp4")])
