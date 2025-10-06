@@ -21,23 +21,29 @@ DEFAULT_FFMPEG = "/usr/bin/ffmpeg"
 # Accepts mm:ss or hh:mm:ss (e.g., 22:12 or 1:02:03)
 TIME_RE = re.compile(r'^(?:(\d+):)?([0-5]?\d):([0-5]?\d)$')
 
-# Header section: “# VIDEO CLIP SUGGESTIONS” with optional colon
+# Header section: robustly capture everything between the section header and the next header (or EOF)
 SUGGESTION_SECTION_RE = re.compile(
     r"""
-    ^\s*\#\s*VIDEO\W*CLIP\W*SUGGESTIONS\s*:?\s*$   # header line, colon optional
-    (.*?)                                          # capture section body (non-greedy)
-    (?=^\s*\#\s|\Z)                                # until next header or EOF
+    ^\s*(?:\#\s*)?VIDEO\W*CLIP\W*SUGGESTIONS\s*:?\s*$   # header line (start of line, optional #, any whitespace, optional colon, end of line)
+    ((?:\r?\n|\r|\n)+                                      # one or more blank lines after header
+    [\s\S]*?)                                                # everything after header, non-greedy
+    (?:^\s*\#.*|\Z)                                         # until next header (starting with #) or EOF
     """,
-    flags=re.IGNORECASE | re.MULTILINE | re.DOTALL | re.VERBOSE
+    flags=re.IGNORECASE | re.MULTILINE
 )
 
 # Each numbered suggestion block (Seconds line optional; Start/End required)
+# Wisdom file format must use bolded labels and quoted first sentence, e.g.:
+# 1. **(45 Seconds)**
+#    **Start:** 40:41
+#    **End:** 41:26
+#    **First Sentence:** "Because when we practice gratitude regularly, they've linked it to lower levels of cortisol...it's really hard to be negative and discouraged."
 BLOCK_RE = re.compile(
     r"""
     ^\s*\d+\.\s*(?:\*\*.*?\*\*)?.*$                 # "1. **(45 Seconds)**"  (optional)
-    .*?^\s*\*\*Start:\*\*\s*([0-9:\s]+?)\s*$        # Start: 13:06
-    .*?^\s*\*\*End:\*\*\s*([0-9:\s]+?)\s*$          # End:   13:51
-    (?:.*?^\s*\*\*First\s+Sentence:\*\*\s*"(.*?)"\s*$)?  # optional
+    .*?^\s*\*\*Start:\*\*\s*([0-9:\s]+?)\s*$        # **Start:** 13:06
+    .*?^\s*\*\*End:\*\*\s*([0-9:\s]+?)\s*$          # **End:**   13:51
+    (?:.*?^\s*\*\*First\s+Sentence:\*\*\s*"(.*?)"\s*$)?  # **First Sentence:** "..."
     (?:.*?^\s*\*\*Last\s+Sentence:\*\*\s*"(.*?)"\s*$)?   # optional
     """,
     flags=re.MULTILINE | re.DOTALL | re.VERBOSE
@@ -138,13 +144,11 @@ def pick_video_for_service(base_dir: Path, sunday_str: str, service: str) -> Opt
     return None
 
 def extract_suggestions(md_text: str) -> List[Dict]:
-    m = SUGGESTION_SECTION_RE.search(md_text)
-    if not m:
-        return []
-    section = m.group(1)
-
+    """
+    Parse all numbered clip blocks from the wisdom file. Assumes the file contains only the list of clips, no headers.
+    """
     clips = []
-    for b in BLOCK_RE.finditer(section):
+    for b in BLOCK_RE.finditer(md_text):
         start_raw = (b.group(1) or "").strip()
         end_raw = (b.group(2) or "").strip()
         first_sentence = (b.group(3) or "").strip()

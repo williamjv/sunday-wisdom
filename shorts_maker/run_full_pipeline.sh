@@ -22,15 +22,29 @@ fail() {
   exit 99
 }
 
+# Ensure yt-dlp is up to date before running pipeline
+python3 -m pip install --upgrade yt-dlp >/dev/null 2>&1
+# ...existing code...
+
 
 # 1. Download latest non-live video
 echo "[1/5] Downloading latest non-live video..."
 python3 download_latest_youtube.py --channel-id "$CHANNEL_ID" --output sermon.mp4 || fail "Failed to download latest YouTube video."
 
+# Find the actual downloaded video file (sermon.mp4 or sermon.mp4.*)
+VIDEO_FILE=""
+if [ -f sermon.mp4 ]; then
+  VIDEO_FILE="sermon.mp4"
+elif ls sermon.mp4.* 1> /dev/null 2>&1; then
+  VIDEO_FILE=$(ls -1 sermon.mp4.* | head -n 1)
+else
+  fail "No downloaded video file found after download step."
+fi
+echo "[INFO] Using video file: $VIDEO_FILE"
 
 # 2. Transcribe and generate wisdom
 echo "[2/5] Transcribing and generating wisdom..."
-python3 generate_wisdom_from_video.py --video sermon.mp4 --wisdom-out wisdom.txt --transcript-out transcript.txt || fail "Failed to transcribe or generate wisdom."
+python3 generate_wisdom_from_video.py --video "$VIDEO_FILE" --wisdom-out wisdom.txt --transcript-out transcript.txt || fail "Failed to transcribe or generate wisdom."
 
 
 # 3. Make up to 5 shorts
